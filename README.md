@@ -8,7 +8,7 @@ mkdir build && cd build && cmake .. && make
 ## Usage
 > You need to get the Base64 of your domain:dnskey via htpasswd or from the internet
 
-Usage: %s hostname base64 [debug=1]
+Usage: hednsupd hostname base64 [debug=1]
 
 hostname = The hostname to update (example.org)
 
