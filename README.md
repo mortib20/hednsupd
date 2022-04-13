@@ -15,8 +15,12 @@ hostname = The hostname to update (example.org)
 base64 = domain:dnskey in base64
 
 # Example
+```
 hednsupd example.org ZG9tYWluOmRuc2tleQ==
+```
 
 with debug info
 
+```
 hednsupd example.org ZG9tYWluOmRuc2tleQ== 1
+```
