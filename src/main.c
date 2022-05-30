@@ -11,6 +11,8 @@
 #include <stdlib.h>         // Standard library definitions
 #include <stdio.h>          // Standard input/output
 #include <string.h>         // String operations
+
+#ifdef LINUX
 #include <unistd.h>         // Standard symbolic constants and types
 #include <sys/socket.h>     // Socket interface
 #include <netinet/in.h>     // IP implementation
@@ -18,6 +20,19 @@
 #include <arpa/inet.h>      // Conversion host <> network order
 #include <netdb.h>          // Definitions for network database operations
 #include <errno.h>          // Error definitions
+#endif
+
+#ifdef WIN32
+
+#define WIN32_LEAN_AND_MEAN
+#include <Windows.h>
+#include <WinSock2.h>
+#include <WS2tcpip.h>
+#include <iphlpapi.h>
+
+#pragma comment(lib, "Ws2_32.lib")
+
+#endif
 
 int DEBUG = 0;
 
@@ -31,6 +46,11 @@ int updateDNS(arguments args);
 
 int main(int argv, char **argc)
 {
+    #ifdef WIN32
+        WSADATA wsaData;
+        WSAStartup(MAKEWORD(2,2),&wsaData);
+    #endif
+
     if(argv == 1)
     {
         printf("Usage: %s hostname base64 [debug=1]\n\n", argc[0]);
@@ -110,17 +130,22 @@ int updateDNS(arguments args)
     args.domain, args.base64);
 
     /* send request*/
-    write(connection, request, strlen(request));
+    //write(connection, request, strlen(request));
+    send(connection, request, strlen(request), 0);
     if(DEBUG == 1)
         printf("%s\n", request);
 
     /* receive response */
-    read(connection, response, sizeof(response));
+    recv(connection, response, sizeof(response), 0);
     if(DEBUG == 1)
         printf("%s\n", response);
 
     /* close connection and free addrinfo */
+    #ifdef LINUX
     close(connection);
+    #else
+    closesocket(connection);
+    #endif
     freeaddrinfo(result);
 
     /* copy 0-15 chars from response to header*/
