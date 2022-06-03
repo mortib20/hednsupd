@@ -129,20 +129,45 @@ int updateDNS(const ARGS args)
         printf("Error updateDNS(send): %s", strerror(errno));
         return -1;
     }
+	/* 
+	 * DANGERZONE
+	 *
+	*/
 
+	// First read in length of response and malloc a char array with the length
     char *response;
-    int resplength = recv(sd, response, 3000, MSG_PEEK | MSG_WAITALL | MSG_CONFIRM);
-    response = (char*) malloc(sizeof(char) * resplength);
-    recv(sd, response, resplength, 0);
+	int resplength = recv(sd, &response, 3000, MSG_PEEK | MSG_WAITALL);
+    response = (char*) malloc(sizeof(char) * resplength + 1);
+	recv(sd, response, resplength, MSG_WAITALL); // And here receive the http response
+	
+    int headlength, headpos;
+    //char *header = (char*) malloc(sizeof(char) * headlength);
+    
+	// Get the body of the html response \r\n\r\n stuff
+	for(int i = 0; i < strlen(response); i++)
+	{
+		if(response[i] == '\r' && response[i + 1] == '\n' && response[i + 2] == '\r' && response[i + 3] == '\n')
+		{
+			printf("%i\n", i);
+			headpos = i;
+		}
+	}
+	headpos += 4; // plus the 4 \r\n\r\n stuff
+	headlength = strcmp(response + headpos, "\0"); // get the length of the body
+	printf("length %i\n", headlength);	
+	char *header = (char*) malloc(sizeof(char) * headlength); // malloc that
 
-    int headlength = strcspn(response, "\r\n\r\n");
-    char *header = (char*) malloc(sizeof(char) * headlength);
-    strncpy(header, response, headlength);
+	strncpy(header, response + headpos, headlength); // copy the body to header
 
     printf("%s\n", header);
 
-    free(response);
+    free(response); // free the stuff
     free(header);
+	/*
+	 *
+	 * DANGERZONE END 
+	 *
+	*/
 
     return 0;
 }
