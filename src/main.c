@@ -1,23 +1,13 @@
-/*
-    This is a (unsecure because http) dyndns client for he.net DNS Servers only IPv4
-    Yes, it could be done easier but...
-
-    You need to get the Base64 of your domain:dnskey via htpasswd or from the internet
-    Usage: Usage: ./hednsupd [hostname] [base64]
-    hostname = The hostname to update (example.org)
-    base64 = domain:dnskey in base64
-*/
-
-#include <stdlib.h>         // Standard library definitions
-#include <stdio.h>          // Standard input/output
-#include <string.h>         // String operations
-#include <unistd.h>         // Standard symbolic constants and types
-#include <sys/socket.h>     // Socket interface
-#include <netinet/in.h>     // IP implementation
-#include <netinet/tcp.h>    // TCP implementation
-#include <arpa/inet.h>      // Conversion host <> network order
-#include <netdb.h>          // Definitions for network database operations
-#include <errno.h>          // Error definitions
+#include <arpa/inet.h> // Conversion host <> network order
+#include <errno.h> // Error definitions
+#include <netdb.h> // Definitions for network database operations
+#include <netinet/in.h> // IP implementation
+#include <netinet/tcp.h> // TCP implementation
+#include <stdio.h> // Standard input/output
+#include <stdlib.h> // Standard library definitions
+#include <string.h> // String operations
+#include <sys/socket.h> // Socket interface
+#include <unistd.h> // Standard symbolic constants and types
 
 /*
 
@@ -30,158 +20,82 @@
 
 */
 
-typedef struct{
-    char *hostname;
-    char *dnskey;
-    struct addrinfo *serveraddr;
-} ARGS;
-
-int checkArguments(char *argv[], int argc, ARGS *args);
-int getAddress(ARGS *args);
-int updateDNS(const ARGS args);
-void cleanUp(ARGS *args);
-
-void base64_encode(char *text);
-
-int main(int argc, char *argv[])
+int main(int argc, char* argv[])
 {
-    
-    ARGS args;
-    
-    if(checkArguments(argv, argc, &args) != 0)
-        goto END;
-
-    if(getAddress(&args) != 0)
-        goto END;
-
-    if(updateDNS(args) != 0)
-        goto END;
-
-    END:
-    cleanUp(&args);
-
-    return 0;
-}
-
-int checkArguments(char *argv[],int argc, ARGS *args)
-{
-    if(argc < 3)
-    {
-        printf("Usage: %s [HOSTNAME] [DDNSKEY]\n", argv[0]);
-        return -1;
+    if (argc < 3) {
+        printf("Usage: %s HOSTNAME HOSTNAME:DNSKEY\n", argv[0]);
+        goto CLEANUP;
     }
 
-    args->hostname = argv[1];
-    args->dnskey = argv[2];
-
-    return 0;
-}
-
-int getAddress(ARGS *args)
-{
+    // Variable Declaration
     size_t error;
-    struct addrinfo hints = 
-    {
-        .ai_family = AF_INET,
-        .ai_socktype = SOCK_STREAM,
-        .ai_flags = AI_CANONNAME,
-        .ai_canonname = NULL,
-        .ai_next = NULL,
-        .ai_addr = NULL,
-        .ai_addrlen = 0,
-        .ai_protocol = 0
-    };
+    int clientsocket, request_length, response_length, header_length;
+    char request[500], response[1500], header[50];
+    struct addrinfo hints, *result, *current_result;
 
-    error = getaddrinfo("dyn.dns.he.net", "80", &hints, &args->serveraddr);
-    if(error != 0)
-    {
-        printf("Error getaddrinfo(): %s\n", gai_strerror(error));
-        return -1;
-    }
-}
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_protocol = IPPROTO_TCP;
+    hints.ai_addrlen = 0;
+    hints.ai_flags = 0;
+    hints.ai_addr = NULL;
+    hints.ai_canonname = NULL;
+    hints.ai_next = NULL;
 
-int updateDNS(const ARGS args)
-{
-    int sd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if(sd < 0)
-    {
-        printf("Error updateDNS(socket): %s\n", strerror(errno));
-        return -1;
+    if ((error = getaddrinfo("dyn.dns.he.net", "80", &hints, &result)) != 0) {
+        printf("getaddrinfo(): %s\n", gai_strerror(error));
+        goto CLEANUP;
     }
 
-    if(connect(sd, args.serveraddr->ai_addr, args.serveraddr->ai_addrlen) == -1)
-    {
-        printf("Error updateDNS(connect): %s\n", strerror(errno));
-        return -1;
+    for (current_result = result; current_result != NULL; current_result = current_result->ai_next) {
+        clientsocket = socket(current_result->ai_family, current_result->ai_socktype, current_result->ai_protocol);
+
+        if (clientsocket == -1)
+            continue;
+
+        if (connect(clientsocket, current_result->ai_addr, current_result->ai_addrlen) != -1)
+            break;
+
+        close(clientsocket);
     }
 
-    char request[500];
-    sprintf(request,
+    freeaddrinfo(result);
+
+    if (current_result == NULL) {
+        printf("connect(): %s\n", strerror(errno));
+        goto CLEANUP;
+    }
+
+    request_length = sprintf(request,
         "GET /nic/update?hostname=%s HTTP/1.0\r\n"
         "Host: dyn.dns.he.net\r\n"
         "Authorization: Basic %s\r\n"
         "User-Agent: hednsupd/2.0\r\n"
         "Accept: */*\r\n"
-        "\r\n", args.hostname, args.dnskey);
-    
-    if(send(sd, request, strlen(request), 0) == -1)
-    {
-        printf("Error updateDNS(send): %s", strerror(errno));
-        return -1;
-    }
-	/* 
-	 * DANGERZONE
-	 *
-	*/
+        "\r\n",
+        argv[1], argv[2]);
 
-	// First read in length of response and malloc a char array with the length
-    char *response;
-	int resplength = recv(sd, &response, 3000, MSG_PEEK | MSG_WAITALL);
-    response = (char*) malloc(sizeof(char) * resplength + 1);
-	recv(sd, response, resplength, MSG_WAITALL); // And here receive the http response
-	
-    int headlength, headpos;
-    //char *header = (char*) malloc(sizeof(char) * headlength);
-    
-	// Get the body of the html response \r\n\r\n stuff
-	for(int i = 0; i < strlen(response); i++)
-	{
-		if(response[i] == '\r' && response[i + 1] == '\n' && response[i + 2] == '\r' && response[i + 3] == '\n')
-		{
-			printf("%i\n", i);
-			headpos = i;
-		}
-	}
-	headpos += 4; // plus the 4 \r\n\r\n stuff
-	headlength = strcmp(response + headpos, "\0"); // get the length of the body
-	printf("length %i\n", headlength);	
-	char *header = (char*) malloc(sizeof(char) * headlength); // malloc that
+    request_length = send(clientsocket, request, request_length, 0);
 
-	strncpy(header, response + headpos, headlength); // copy the body to header
+    response_length = recv(clientsocket, response, sizeof(response), MSG_WAITALL);
 
-    printf("%s\n", header);
+    response[response_length] = '\0';
 
-    free(response); // free the stuff
-    free(header);
-	/*
-	 *
-	 * DANGERZONE END 
-	 *
-	*/
+    close(clientsocket);
+
+    header_length = strcspn(response, "\r\n");
+
+    strncpy(header, response, header_length);
+
+    header[header_length] = '\0';
+
+    if(strcmp(header, "HTTP/1.0 200 OK") == 0)
+        printf("DNS has been updated!\n");
+    else
+        printf("DNS failed to update!\n");
+
+CLEANUP:
 
     return 0;
-}
-
-void cleanUp(ARGS *args)
-{
-    freeaddrinfo(args->serveraddr);
-    args->hostname = NULL;
-    args->dnskey = NULL;
-    args->serveraddr = NULL;
-}
-
-void base64_encode(char *text)
-{
-    char base64_alphabet[65] =
-    "ABCDEFGHIJKLMNOPQRSTUVWabcdefghijklmnopqrstuvwxyz0123456789+/";
 }
