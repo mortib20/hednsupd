@@ -22,12 +22,13 @@
 
 int main(int argc, char* argv[])
 {
+    /* Step 1 */
     if (argc < 3) {
         printf("Usage: %s HOSTNAME HOSTNAME:DNSKEY\n", argv[0]);
         goto CLEANUP;
     }
 
-    // Variable Declaration
+    /* Variable Declaration */
     size_t error;
     int clientsocket, request_length, response_length, header_length;
     char request[500], response[1500], header[50];
@@ -43,11 +44,13 @@ int main(int argc, char* argv[])
     hints.ai_canonname = NULL;
     hints.ai_next = NULL;
 
+    /* Step 2 */
     if ((error = getaddrinfo("dyn.dns.he.net", "80", &hints, &result)) != 0) {
         printf("getaddrinfo(): %s\n", gai_strerror(error));
         goto CLEANUP;
     }
 
+    /* Step 3 */
     for (current_result = result; current_result != NULL; current_result = current_result->ai_next) {
         clientsocket = socket(current_result->ai_family, current_result->ai_socktype, current_result->ai_protocol);
 
@@ -67,6 +70,7 @@ int main(int argc, char* argv[])
         goto CLEANUP;
     }
 
+    /* Step 4 */
     request_length = sprintf(request,
         "GET /nic/update?hostname=%s HTTP/1.0\r\n"
         "Host: dyn.dns.he.net\r\n"
@@ -78,18 +82,15 @@ int main(int argc, char* argv[])
 
     request_length = send(clientsocket, request, request_length, 0);
 
+    /* Step 5 */
     response_length = recv(clientsocket, response, sizeof(response), MSG_WAITALL);
-
     response[response_length] = '\0';
-
     close(clientsocket);
-
     header_length = strcspn(response, "\r\n");
-
     strncpy(header, response, header_length);
-
     header[header_length] = '\0';
 
+    /* Step 6 */
     if(strcmp(header, "HTTP/1.0 200 OK") == 0)
         printf("DNS has been updated!\n");
     else
